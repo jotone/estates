@@ -29,11 +29,6 @@ class RouteServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
 
         $this->routes(function () {
-            Route::middleware('web')
-                ->as('dashboard.')
-                ->prefix('dashboard')
-                ->group(base_path('routes/dashboard.php'));
-
             Route::middleware('api')
                 ->prefix('api')
                 ->group(base_path('routes/api.php'));
