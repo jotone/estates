@@ -125,13 +125,45 @@ class BasicApiController extends Controller
         return $collection;
     }
 
+
     /**
-     * @param $collection
-     * @param array $args
+     * Default api destroy method
+     *
+     * @param Model $model
+     * @return JsonResponse
+     * @throws \Exception
+     */
+    protected function destroyRequest(Model $model): JsonResponse
+    {
+        $model->delete();
+
+        return response()->json([], 204);
+    }
+
+    /**
+     * Default api index method response
+     *
+     * @param Request $request
+     * @param Builder $collection
+     * @param $search_callback
      * @return JsonResponse
      */
-    protected function apiIndexResponse($collection, array $args): JsonResponse
+    protected function indexRequest(Request $request, Builder $collection, $search_callback = null): JsonResponse
     {
+        // Get request data
+        $args = $this->parseData($request);
+
+        // Get total elements count
+        $total = $collection->count();
+
+        // Check search value isset
+        if (!empty($args['search'])) {
+            $search = mb_strtolower($args['search']);
+            $collection = empty($search_callback)
+                ? $collection->whereRaw("LOWER(name) LIKE '%$search%'")
+                : $search_callback($collection, $search);
+        }
+
         // Apply "where" query
         if (!empty($args['where'])) {
             $collection = $this->applyWhereQuery($collection, $args['where'], 'where');
@@ -146,11 +178,11 @@ class BasicApiController extends Controller
         }
 
         // Get total elements count
-        $total = $collection->count();
+        $filtered = $collection->count();
 
         // Apply additional query relationships
         if (!empty($args['with'])) {
-            $collection = $collection->with($args['with']);
+            $collection = $this->applyWithQuery($collection, $args['with']);
         }
         // Apply order query
         foreach ($this->order as $field) {
@@ -171,52 +203,9 @@ class BasicApiController extends Controller
             }),
             'page' => $this->page,
             'take' => $this->take,
+            'filtered' => $filtered,
             'total' => $total
         ]);
-    }
-
-
-    /**
-     * Default api destroy method
-     *
-     * @param Model $model
-     * @return JsonResponse
-     * @throws \Exception
-     */
-    protected function destroyRequest(Model $model): JsonResponse
-    {
-        $model->delete();
-
-        return response()->json([], 204);
-    }
-
-    /**
-     * Default api index method response
-     *
-     * @param Request $request
-     * @param string $model
-     * @param $callback
-     * @return JsonResponse
-     */
-    protected function listRequest(Request $request, string $model, $callback = null): JsonResponse
-    {
-        // Get request data
-        $args = $this->parseData($request);
-
-        // Run query
-        $collection = method_exists(static::class, 'query') ? $this->query($model) : $model::query();
-
-        // Set search value
-        $search = $args['search'] ?? null;
-
-        // Check search value isset
-        if (!empty($search)) {
-            $collection = empty($callback)
-                ? $collection->where('name', 'like', '%' . $search . '%')
-                : $callback($collection, $search);
-        }
-
-        return $this->apiIndexResponse($collection, $args);
     }
 
     /**
@@ -255,20 +244,21 @@ class BasicApiController extends Controller
      * Default api show method response
      *
      * @param int $id
-     * @param $model
+     * @param Builder $collection
      * @param Request $request
      * @return JsonResponse
      */
-    protected function showRequest(int $id, $model, Request $request): JsonResponse
+    protected function showRequest(int $id, Builder $collection, Request $request): JsonResponse
     {
+        $args = $request->only(['select', 'with']);
         // Select specified fields
-        if ($request->has('select')) {
-            $model = $model->select(explode(',', $request->get('select')));
+        if (!empty($args['select'])) {
+            $collection = $collection->select(explode(',', $args['select']));
         }
         // Select relation
-        if ($request->has('with')) {
-            $model = $model->with($request->get('with'));
+        if (!empty($args['with'])) {
+            $collection = $this->applyWithQuery($collection, $args['with']);
         }
-        return response()->json($model->findOrFail($id));
+        return response()->json($collection->findOrFail($id));
     }
 }
